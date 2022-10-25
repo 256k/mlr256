@@ -1,26 +1,16 @@
--- mlr
--- v2.2.5 @tehn
--- l.llllllll.co/mlr
+-- mlr 256
+-- a 256 compatible mlr script 
 --
--- /////////
--- ////
--- ////////////
--- //////////
--- ///////
--- /
--- ////
--- //
--- /////////
--- ///
--- /
+-- inspired by mlrV 
+-- 15 tracks/ 16 clips/ 6 groups
 --
--- ////
--- /
+-- by 256k
 --
--- /
---
---
+-- based on mlr v2.2.5 by @tehn
+-- 
 
+--
+--
 
 local g = grid.connect()
 
