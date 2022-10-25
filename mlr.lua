@@ -40,6 +40,7 @@ local CLIP_LEN_SEC = math.floor(BUFFER_SIZE/MAX_CLIPS)
 local vREC = 1
 local vCUT = 2
 local vCLIP = 3
+local vGROUP = 4
 local vTIME = 15
 
 -- events
@@ -341,6 +342,20 @@ set_clip = function(i, x)
   softcut.phase_quant(i,q)
   softcut.phase_offset(i,off)
   --track[i].loop = 0
+end
+
+set_group = function(i, x)
+  --track[i].play = 0
+  --ch_toggle(i,0)
+  print("set_clip")
+  track[i].group = x -- we assign the track number i (1 to 6), to the clip number x (1 to 16)
+  -- softcut.loop_start(track[i].group,clip[track[i].clip].s)
+  -- softcut.loop_end(track[i].group,clip[track[i].clip].e)
+  -- local q = calc_quant(i)
+  -- local off = calc_quant_off(i, q)
+  -- softcut.phase_quant(i,q)
+  -- softcut.phase_offset(i,off)
+  -- --track[i].loop = 0
 end
 
 set_rec = function(n)
@@ -660,7 +675,8 @@ gridkey_nav = function(x,z)
       set_view(vREC)
     elseif x==2 then set_view(vCUT)
     elseif x==3 then set_view(vCLIP)
-    elseif x>4 and x<9 then
+    elseif x==4 then set_view(vGROUP) -- ADDED EXTRA PAGE NUMBER FOR VOICE GROUP PAGE
+    elseif x>5 and x<9 then
       local i = x - 4
       if alt == 1 then
         local e={t=ePATTERN,i=i,action="rec_stop"} event(e)
@@ -966,7 +982,7 @@ v.gridredraw[vCUT] = function()
 end
 
 
-
+-- ========================================================================= --
 --------------------CLIP
 
 clip_actions = {"load","clear","save"}
@@ -1088,6 +1104,7 @@ v.redraw[vCLIP] = function()
   screen.update()
 end
 
+
 v.gridkey[vCLIP] = function(x, y, z)
   print("grid key set clip triggered v.gridkey[vCLIP]")
   if y == 1 then gridkey_nav(x,z)
@@ -1098,13 +1115,167 @@ v.gridkey[vCLIP] = function(x, y, z)
     if x ~= track[clip_sel].clip then
       set_clip(clip_sel,x)
     end
-    print(" track[clip-sel].clip value: ", track[clip_sel].clip)
+    print(" track[clip-sel].clip value: ", track[clip_sel].group)
     redraw()
     dirtygrid=true
   end
 end
 
 v.gridredraw[vCLIP] = function()
+  g:all(0)
+  gridredraw_nav()
+  for i=1,16 do g:led(i,clip_sel+1,4) end
+  for i=1,TRACKS do g:led(track[i].clip,i+1,10) end
+  g:refresh();
+end
+
+-- ========================================================================= --
+--
+--
+-- ========================================================================= --
+-- VOICE GROUP
+
+-- this is the drawing function of the 4th page [vGROUP]
+
+clip_actions = {"load","clear","save"}
+clip_action = 1
+clip_sel = 1
+voicegroup_sel = 1
+clip_clear_mult = 3
+
+function fileselect_callback(path, c)
+  print("FILESELECT "..c)
+  if path ~= "cancel" and path ~= "" then
+    local ch, len = audio.file_info(path)
+    if ch > 0 and len > 0 then
+      print("file > "..path.." "..clip[track[c].clip].s)
+      print("file length > "..len/48000)
+      --softcut.buffer_read_mono(path, 0, clip[track[clip_sel].clip].s, len/48000, 1, 1)
+      softcut.buffer_read_mono(path, 0, clip[track[c].clip].s, CLIP_LEN_SEC, 1, 1)
+      local l = math.min(len/48000, CLIP_LEN_SEC)
+      set_clip_length(track[c].clip, l)
+      clip[track[c].clip].name = path:match("[^/]*$")
+      -- TODO: STRIP extension
+      set_clip(c,track[c].clip)
+      update_rate(c)
+      --params:set(c.."file",path) -- conflicts with session save / pset callback
+    else
+      print("not a sound file")
+    end
+
+    -- TODO re-set_clip any tracks with this clip loaded
+    screenredrawtimer:start()
+    redraw()
+  end
+end
+
+function textentry_callback(txt)
+  if txt then
+    local c_start = clip[track[clip_sel].clip].s
+    local c_len = clip[track[clip_sel].clip].l
+    print("SAVE " .. _path.audio .. "mlr/" .. txt .. ".wav", c_start, c_len)
+    util.make_dir(_path.audio .. "mlr")
+    softcut.buffer_write_mono(_path.audio.."mlr/"..txt..".wav",c_start,c_len,1)
+    clip[track[clip_sel].clip].name = txt
+  else
+    print("save cancel")
+  end
+  screenredrawtimer:start()
+  redraw()
+end
+
+v.key[vGROUP] = function(n,z)
+  print("norns key set clip triggered v.key[vCLIP]")
+  if n==2 and z==0 then
+    if clip_actions[clip_action] == "load" then
+      screenredrawtimer:stop()
+      fileselect.enter(os.getenv("HOME").."/dust/audio",
+        function(n) fileselect_callback(n,clip_sel) end)
+    elseif clip_actions[clip_action] == "clear" then
+      softcut.buffer_clear_region_channel(1, clip[track[clip_sel].clip].s, CLIP_LEN_SEC)
+      set_clip_length(track[clip_sel].clip, 4)
+      set_clip(clip_sel,track[clip_sel].clip)
+      update_rate(clip_sel)
+      clip[track[clip_sel].clip].name = '-'
+      print("clip "..track[clip_sel].clip.." cleared")
+      redraw()
+    elseif clip_actions[clip_action] == "save" then
+      screenredrawtimer:stop()
+      textentry.enter(textentry_callback, "mlr-" .. (math.random(9000)+1000))
+    end
+  elseif n==3 and z==1 then
+    clip_reset(clip_sel,60/params:get("clock_tempo")*(2^(clip_clear_mult-2)))
+    set_clip(clip_sel,track[clip_sel].clip)
+    update_rate(clip_sel)
+  end
+end
+
+v.enc[vGROUP] = function(n,d)
+  if n==2 then
+    clip_action = util.clamp(clip_action + d, 1, 3)
+  elseif n==3 then
+    clip_clear_mult = util.clamp(clip_clear_mult+d,1,6)
+  end
+  redraw()
+  dirtygrid=true
+end
+
+local function truncateMiddle (str, maxLength, separator)
+  maxLength = maxLength or 30
+  separator = separator or "..."
+
+  if (maxLength < 1) then return str end
+  if (string.len(str) <= maxLength) then return str end
+  if (maxLength == 1) then return string.sub(str, 1, 1) .. separator end
+
+  midpoint = math.ceil(string.len(str) / 2)
+  toremove = string.len(str) - maxLength
+  lstrip = math.ceil(toremove / 2)
+  rstrip = toremove - lstrip
+
+  return string.sub(str, 1, midpoint - lstrip) .. separator .. string.sub(str, 1 + midpoint + rstrip)
+end
+
+v.redraw[vGROUP] = function()
+  screen.clear()
+  screen.level(15)
+  screen.move(10,16)
+  screen.text("VOICE > TRACK "..clip_sel)
+
+  -- screen.move(10,52)
+  -- screen.text(track[clip])
+  -- screen.level(15)
+  screen.move(10,60)
+  screen.text("voice " ..voicegroup_sel)
+
+  -- screen.move(100,52)
+  -- screen.text(2^(clip_clear_mult-2))
+  -- screen.level(3)
+  -- screen.move(100,60)
+  -- screen.text("resize")
+
+  screen.update()
+end
+
+
+v.gridkey[vGROUP] = function(x, y, z)
+  print("grid key set clip triggered v.gridkey[vCLIP]")
+  if y == 1 then gridkey_nav(x,z)
+  elseif z == 1 and y < TRACKS+2 and x < MAX_CLIPS+1 then
+    voicegroup_sel = x
+    clip_sel = y-1
+    print("clip-sel", clip_sel)
+    print("voicegroup_sel: ", voicegroup_sel)
+    if voicegroup_sel ~= track[clip_sel].group then
+      set_group(clip_sel,voicegroup_sel)
+    end
+    print(" track[clip-sel].clip value: ", track[clip_sel].group )
+    redraw()
+    dirtygrid=true
+  end
+end
+
+v.gridredraw[vGROUP] = function()
   g:all(0)
   gridredraw_nav()
   for i=1,16 do g:led(i,clip_sel+1,4) end
