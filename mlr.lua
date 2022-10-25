@@ -276,6 +276,13 @@ for i=1,TRACKS do
     end
 end
 
+group = {}
+for i=1,GROUPS do
+  tab.print(group)
+  group[i] = {}
+  group[i].active = 0
+end
+
 
 set_clip_length = function(i, len)
   print("set_clip_length", i, len)
@@ -335,10 +342,40 @@ set_clip = function(i, x)
 end
 
 set_group = function(i, x)
-  --track[i].play = 0
-  --ch_toggle(i,0)
-  print("set_clip")
-  track[i].group = x -- we assign the track number i (1 to 6), to the clip number x (1 to 16)
+
+  -- i: track / x: voicegroup
+  
+  print("set_group")
+   -- we assign the track number i (1 to 6), to the clip number x (1 to 16)
+   
+   for t=1,TRACKS do
+  if track[t].group == x and track[t].play == 1  then
+    print("this group is already playing on track: ", t)
+    -- stop_grouptrack() -- to be created. this would stop the currently playing track assigned to the same group the user is assigning
+    -- would contain these 2 commands:
+    track[t].play = 0;
+    track[i].play = 1;
+    
+    -- but also re-assign the softclip stuff properly. TBD what that functionality looks like exactly.
+    -- the .stop function only changes the LED status bu doesn't actually update the softcut settings to "stop"
+    -- perhaps some event of type stop is needed. like e.stop or somthing like that. look at the event_exec(e)
+  end
+   end
+
+
+  -- for y=1,GROUPS do
+  -- if group[y].active == 1 then
+  --   -- then we stop the track[y]
+  --   for t=1,TRACKS do
+  --     if track[t].group == y then
+  --       -- STOP THIS TRACK
+  --       print("STOP THIS TRACK number: ", t)
+  --   end
+    
+  -- end
+  -- end
+  -- end
+  track[i].group = x
   -- softcut.loop_start(track[i].group,clip[track[i].clip].s)
   -- softcut.loop_end(track[i].group,clip[track[i].clip].e)
   -- local q = calc_quant(i)
@@ -1269,7 +1306,7 @@ v.gridredraw[vGROUP] = function()
   g:all(0)
   gridredraw_nav()
   for i=1,16 do g:led(i,clip_sel+1,4) end
-  for i=1,TRACKS do g:led(track[i].clip,i+1,10) end
+  for i=1,TRACKS do g:led(track[i].group,i+1,10) end
   g:refresh();
 end
 
