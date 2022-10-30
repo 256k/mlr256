@@ -1,7 +1,7 @@
--- mlr 256
+-- mlr256
 -- a 256 compatible mlr script 
 --
--- inspired by mlrV 
+-- inspired by mlr incarnations 
 -- 15 tracks/ 16 clips/ 6 groups
 --
 -- by 256k
@@ -18,8 +18,9 @@ local fileselect = require 'fileselect'
 local textentry = require 'textentry'
 local pattern_time = require 'pattern_time'
 
-local TRACKS = 6
+local TRACKS = 15
 local FADE = 0.01
+local SLICES = 16
 
 -- softcut has ~350s per buffer
 local BUFFER_SIZE = 350
@@ -112,34 +113,35 @@ end
 
 
 function event_exec(e)
+  -- tab.print(e)
   if e.t==eCUT then -- WIP
     print("eCUT event triggered")
-    tab.print(e)
+    -- tab.print(e)
     if track[e.i].loop == 1 then
       track[e.i].loop = 0
       softcut.loop_start(e.i,clip[track[e.i].clip].s)
       softcut.loop_end(e.i,clip[track[e.i].clip].e)
     end
     print("track[e.i].clip", track[e.i].clip)
-    local cut = (e.pos/16)*clip[track[e.i].clip].l + clip[track[e.i].clip].s -- i think the cut variable is a position in the buffer?
+    local cut = (e.pos/SLICES)*clip[track[e.i].clip].l + clip[track[e.i].clip].s -- i think the cut variable is a position in the buffer?
     print("cut", cut)
     print("clip[track[e.i].clip]:")
-    tab.print(clip[track[e.i].clip])
+    -- tab.print(clip[track[e.i].clip])
     -- e: 
     -- name:
     -- s:
     -- bpm:
     -- l:
     
-    softcut.position(e.i,cut)
+    softcut.position(track[e.i].group,cut) -- replaced softcut voice being identified by e.i which is the track number, to being the group number associated to that track
     --softcut.reset(e.i)
     if track[e.i].play == 0 then
       track[e.i].play = 1
-      ch_toggle(e.i,1)
+      ch_toggle(track[e.i].group,1)
       clock.run(
       function()
         clock.sleep(lag)
-        softcut.level(e.i, track[e.i].vol)
+        softcut.level(track[e.i].group, track[e.i].vol)
       end
     )
     end
@@ -156,11 +158,11 @@ function event_exec(e)
     )
   elseif e.t == eSTART then
     track[e.i].play = 1
-    ch_toggle(e.i,1)
+    ch_toggle(track[e.i].group,1)
     clock.run(
       function()
         clock.sleep(lag)
-        softcut.level(e.i, track[e.i].vol)
+        softcut.level(track[e.i].group, track[e.i].vol)
         dirtygrid = true
       end
     )
@@ -253,6 +255,7 @@ focus = 1
 alt = 0
 
 track = {}
+groupCount = 0
 for i=1,TRACKS do
   track[i] = {}
   track[i].head = (i-1)%4+1
@@ -270,28 +273,36 @@ for i=1,TRACKS do
   track[i].speed = 0
   track[i].rev = 0
   track[i].tempo_map = 0
-  if i <= GROUPS then
-  track[i].group = i
-  else track[i].group = i - GROUPS
+   print("i ", i)
+  if groupCount < GROUPS then
+    print("groupCount ", groupCount)
+    groupCount = groupCount  + 1
+  track[i].group = groupCount
+   print("track[i].group ", track[i].group)
+  
+  else 
+    print("groupCount else", groupCount)
+    groupCount = 1
+    track[i].group = groupCount
     end
 end
 
 group = {}
 for i=1,GROUPS do
-  tab.print(group)
+  -- tab.print(group)
   group[i] = {}
   group[i].active = 0
 end
 
 
 set_clip_length = function(i, len)
-  print("set_clip_length", i, len)
+  -- print("set_clip_length", i, len)
   clip[i].l = len
   clip[i].e = clip[i].s + len
   local bpm = 60 / len
   while bpm < 60 do
     bpm = bpm * 2
-    print("bpm > "..bpm)
+    -- print("bpm > "..bpm)
   end
   clip[i].bpm = bpm
 end
@@ -332,12 +343,13 @@ set_clip = function(i, x)
   --ch_toggle(i,0)
   print("set_clip")
   track[i].clip = x -- we assign the track number i (1 to 6), to the clip number x (1 to 16)
+  print(track[i].group)
   softcut.loop_start(track[i].group,clip[track[i].clip].s)
   softcut.loop_end(track[i].group,clip[track[i].clip].e)
   local q = calc_quant(i)
   local off = calc_quant_off(i, q)
-  softcut.phase_quant(i,q)
-  softcut.phase_offset(i,off)
+  softcut.phase_quant(track[i].group,q)
+  softcut.phase_offset(track[i].group,off)
   --track[i].loop = 0
 end
 
@@ -353,8 +365,14 @@ set_group = function(i, x)
     print("this group is already playing on track: ", t)
     -- stop_grouptrack() -- to be created. this would stop the currently playing track assigned to the same group the user is assigning
     -- would contain these 2 commands:
+    -- track[t].play = 0;
+    -- event_exec({i=t,t=2})
+    -- event_exec({i=t,t=3})
+    -- track[i].play = 1;
+    
+    ch_toggle(t,0)
     track[t].play = 0;
-    track[i].play = 1;
+    ch_toggle(i,1)
     
     -- but also re-assign the softclip stuff properly. TBD what that functionality looks like exactly.
     -- the .stop function only changes the LED status bu doesn't actually update the softcut settings to "stop"
@@ -441,6 +459,7 @@ end
 
 
 function ch_toggle(i,x)
+  -- i: voice / x: state (on/off)
   softcut.play(i,x)
   softcut.rec(i,x)
 end
@@ -522,7 +541,7 @@ init = function()
       ]]--
 
     update_rate(i)
-    set_clip(i,i)
+    set_clip(i,i) -- i think this is where the problem lies, it passes the track index 'i' as the softcut voice? maybe?
     --softcut.phase_quant(i,calc_quant(i))
   end
 
@@ -552,7 +571,7 @@ init = function()
   -- pset callback
   params.action_write = function(filename, name)
 
-    local pset_string = string.sub(filename, string.len(filename) - 6, -1)
+    local pset_string = string.sub(filename, string.len(filename) - MAX_CLIPS, -1)
     local number = pset_string:gsub(".pset", "")
 
     os.execute("mkdir -p "..norns.state.data.."sessions/"..number.."/")
@@ -564,7 +583,7 @@ init = function()
     local sesh_data = {}
 
     -- clip data
-    for i = 1, 8 do
+    for i = 1, MAX_CLIPS + 1 do
       sesh_data[i] = {}
       sesh_data[i].clip_name = clip[i].name
       sesh_data[i].clip_e = clip[i].e
@@ -573,7 +592,7 @@ init = function()
     end
 
     -- track data
-    for i = 1, 6 do
+    for i = 1, TRACKS do
       sesh_data[i].track_speed = track[i].speed
       sesh_data[i].track_rev = track[i].rev
       sesh_data[i].track_tempo_map = track[i].tempo_map
@@ -606,7 +625,7 @@ init = function()
       local pset_id = string.sub(io.read(), 4, -1)
       io.close(loaded_file)
 
-      local pset_string = string.sub(filename, string.len(filename) - 6, -1)
+      local pset_string = string.sub(filename, string.len(filename) - MAX_CLIPS, -1)
       local number = pset_string:gsub(".pset", "")
 
       -- load buffer content
@@ -625,7 +644,7 @@ init = function()
       end
 
       -- load track data
-      for i = 1, 6 do
+      for i = 1, TRACKS do
         track[i].clip = sesh_data[i].track_clip
         set_clip(i, track[i].clip)
         track[i].tempo_map = sesh_data[i].track_tempo_map
@@ -669,8 +688,10 @@ end
 
 -- poll callback
 phase = function(n, x)
+  print("n", n)
   --if n == 1 then print(x) end
   local pp = ((x - clip[track[n].clip].s) / clip[track[n].clip].l)-- * 16 --TODO 16=div
+  print("pp", pp)
   --x = math.floor(track[n].pos*16)
   --if n==1 then print("> "..x.." "..pp) end
   x = math.floor(pp * 16)
@@ -995,6 +1016,8 @@ v.gridredraw[vCUT] = function()
     end
     if track[i].play == 1 then
       if track[i].rev == 0 then
+        print(track[i].pos_grid)
+        print(track[i].pos_grid%16)
         g:led((track[i].pos_grid + 1) %16, i + 1, 15)
       elseif track[i].rev == 1 then
         if track[i].loop == 1 then
@@ -1305,8 +1328,12 @@ end
 v.gridredraw[vGROUP] = function()
   g:all(0)
   gridredraw_nav()
-  for i=1,16 do g:led(i,clip_sel+1,4) end
-  for i=1,TRACKS do g:led(track[i].group,i+1,10) end
+  for x=1,GROUPS do  
+  for y=1,TRACKS do 
+    g:led(x,y+1,4)
+    g:led(track[y].group,y+1,10) 
+  end
+  end
   g:refresh();
 end
 
